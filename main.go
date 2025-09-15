@@ -91,10 +91,12 @@ func newServer(config *config) (*mcpServer, error) {
 }
 
 func (s *mcpServer) initializeLSP() error {
+	coreLogger.Info("Changing to workspace directory: %s", s.config.workspaceDir)
 	if err := os.Chdir(s.config.workspaceDir); err != nil {
 		return fmt.Errorf("failed to change to workspace directory: %v", err)
 	}
 
+	coreLogger.Info("Creating LSP client with command: %s, args: %v", s.config.lspCommand, s.config.lspArgs)
 	client, err := lsp.NewClient(s.config.lspCommand, s.config.lspArgs...)
 	if err != nil {
 		return fmt.Errorf("failed to create LSP client: %v", err)
@@ -102,31 +104,49 @@ func (s *mcpServer) initializeLSP() error {
 	s.lspClient = client
 	s.workspaceWatcher = watcher.NewWorkspaceWatcher(client)
 
+	coreLogger.Info("Initializing LSP client...")
 	initResult, err := client.InitializeLSPClient(s.ctx, s.config.workspaceDir)
 	if err != nil {
 		return fmt.Errorf("initialize failed: %v", err)
 	}
 
+	coreLogger.Info("LSP server capabilities received")
 	coreLogger.Debug("Server capabilities: %+v", initResult.Capabilities)
 
+	coreLogger.Info("Starting workspace watcher...")
 	go s.workspaceWatcher.WatchWorkspace(s.ctx, s.config.workspaceDir)
-	return client.WaitForServerReady(s.ctx)
+	
+	coreLogger.Info("Waiting for LSP server to be ready...")
+	err = client.WaitForServerReady(s.ctx)
+	if err != nil {
+		return fmt.Errorf("LSP server ready wait failed: %v", err)
+	}
+	coreLogger.Info("LSP server is ready")
+	return nil
 }
 
 func (s *mcpServer) start() error {
+	coreLogger.Info("Initializing LSP client with command: %s, args: %v", s.config.lspCommand, s.config.lspArgs)
+	coreLogger.Info("Workspace directory: %s", s.config.workspaceDir)
+	
 	if err := s.initializeLSP(); err != nil {
+		coreLogger.Error("LSP initialization failed: %v", err)
 		return err
 	}
+	coreLogger.Info("LSP client initialized successfully")
 
 	s.mcpServer = mcp.NewServer(&mcp.Implementation{
 		Name:    "MCP Language Server",
 		Version: "v0.0.2",
 	}, nil)
 
+	coreLogger.Info("Registering MCP tools...")
 	err := s.registerTools()
 	if err != nil {
+		coreLogger.Error("Tool registration failed: %v", err)
 		return fmt.Errorf("tool registration failed: %v", err)
 	}
+	coreLogger.Info("MCP tools registered successfully")
 
 	switch s.config.mode {
 	case "stdio":
@@ -134,15 +154,26 @@ func (s *mcpServer) start() error {
 		return s.mcpServer.Run(s.ctx, &mcp.StdioTransport{})
 	case "http":
 		addr := fmt.Sprintf(":%d", s.config.port)
-		coreLogger.Info("Starting MCP server in HTTP mode on %s", addr)
+		coreLogger.Info("Starting MCP server in HTTP mode")
+		coreLogger.Info("Server will bind to address: %s", addr)
+		coreLogger.Info("Full server URL will be: http://0.0.0.0%s", addr)
 		
-		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+			coreLogger.Info("HTTP request received: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 			return s.mcpServer
 		}, nil)
 		
+		// Add logging middleware
+		loggedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			coreLogger.Info("Request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+			handler.ServeHTTP(w, r)
+			coreLogger.Info("Response completed for %s %s in %v", r.Method, r.URL.Path, time.Since(start))
+		})
+		
 		httpServer := &http.Server{
 			Addr:    addr,
-			Handler: handler,
+			Handler: loggedHandler,
 		}
 		
 		// Start server in a goroutine so we can handle shutdown
@@ -154,7 +185,14 @@ func (s *mcpServer) start() error {
 			httpServer.Shutdown(shutdownCtx)
 		}()
 		
-		return httpServer.ListenAndServe()
+		coreLogger.Info("About to call ListenAndServe() on %s", addr)
+		err := httpServer.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			coreLogger.Error("HTTP server failed: %v", err)
+			return fmt.Errorf("HTTP server failed: %v", err)
+		}
+		coreLogger.Info("HTTP server stopped")
+		return nil
 	default:
 		return fmt.Errorf("unsupported mode: %s", s.config.mode)
 	}
@@ -162,6 +200,7 @@ func (s *mcpServer) start() error {
 
 func main() {
 	coreLogger.Info("MCP Language Server starting")
+	coreLogger.Info("Process ID: %d, Parent ID: %d", os.Getpid(), os.Getppid())
 
 	done := make(chan struct{})
 	sigChan := make(chan os.Signal, 1)
@@ -169,12 +208,19 @@ func main() {
 
 	config, err := parseConfig()
 	if err != nil {
-		coreLogger.Fatal("%v", err)
+		coreLogger.Fatal("Failed to parse config: %v", err)
 	}
+
+	coreLogger.Info("Configuration loaded:")
+	coreLogger.Info("  Mode: %s", config.mode)
+	coreLogger.Info("  Port: %d", config.port)
+	coreLogger.Info("  Workspace: %s", config.workspaceDir)
+	coreLogger.Info("  LSP Command: %s", config.lspCommand)
+	coreLogger.Info("  LSP Args: %v", config.lspArgs)
 
 	server, err := newServer(config)
 	if err != nil {
-		coreLogger.Fatal("%v", err)
+		coreLogger.Fatal("Failed to create server: %v", err)
 	}
 
 	// Parent process monitoring channel
