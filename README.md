@@ -167,6 +167,144 @@ This is an [MCP](https://modelcontextprotocol.io/introduction) server that runs 
   </div>
 </details>
 
+## HTTP Mode and Remote Deployment
+
+In addition to the traditional stdio mode, this server now supports HTTP streaming mode for remote deployment. This is particularly useful for deploying language servers to cloud instances and accessing them from local development environments or MetaMCP servers.
+
+### HTTP Mode Usage
+
+Run the server in HTTP mode:
+
+```bash
+# TypeScript language server on port 8080
+mcp-language-server --mode=http --port=8080 --workspace=/path/to/project --lsp=typescript-language-server -- --stdio
+
+# Go language server on port 8081  
+mcp-language-server --mode=http --port=8081 --workspace=/path/to/project --lsp=gopls
+
+# Python language server on port 8082
+mcp-language-server --mode=http --port=8082 --workspace=/path/to/project --lsp=pyright-langserver -- --stdio
+```
+
+### Docker Deployment
+
+The easiest way to deploy remotely is using Docker. Several deployment options are provided:
+
+#### Quick Start with TypeScript
+
+```bash
+# Clone and build
+git clone https://github.com/your-username/mcp-language-server.git
+cd mcp-language-server
+
+# Copy and customize environment variables
+cp .env.example .env
+# Edit .env to set your workspace paths and ports
+
+# Start TypeScript language server
+docker-compose up mcp-typescript
+```
+
+#### Multi-Language Deployment
+
+Deploy multiple language servers simultaneously:
+
+```bash
+# Start all language servers on different ports
+docker-compose up mcp-typescript mcp-go mcp-python mcp-rust mcp-clangd
+```
+
+#### Individual Language Servers
+
+Deploy specific language servers:
+
+```bash
+# TypeScript only
+docker-compose up mcp-typescript
+
+# Go only  
+docker-compose up mcp-go
+
+# Python only
+docker-compose up mcp-python
+
+# Rust only
+docker-compose up mcp-rust
+
+# C/C++ (clangd) only
+docker-compose up mcp-clangd
+```
+
+#### Environment Configuration
+
+All aspects of the deployment are configurable via `.env` file. Key environment variables:
+
+```bash
+# Language server ports
+MCP_TYPESCRIPT_PORT=8080
+MCP_GO_PORT=8081
+MCP_PYTHON_PORT=8082
+MCP_RUST_PORT=8083
+MCP_CLANGD_PORT=8084
+
+# Workspace paths (mount your code here)
+WORKSPACE_PATH=./workspace
+GO_WORKSPACE_PATH=./go-workspace
+PYTHON_WORKSPACE_PATH=./python-workspace
+RUST_WORKSPACE_PATH=./rust-workspace
+CLANGD_WORKSPACE_PATH=./clangd-workspace
+
+# Service-specific configuration (all customizable)
+TYPESCRIPT_MCP_MODE=http
+GO_MCP_MODE=http
+PYTHON_MCP_MODE=http
+# ... and many more - see .env.example for full list
+```
+
+**Complete configurability**: Every environment variable used in the docker-compose.yml can be customized via the .env file, including service modes, internal ports, workspace directories, and language server types.
+
+### Connecting from MetaMCP Server
+
+Configure your MetaMCP server to connect to the deployed language servers:
+
+```json
+{
+  "mcpServers": {
+    "typescript-language-server": {
+      "transport": {
+        "type": "http",
+        "endpoint": "http://your-server:8080"
+      }
+    },
+    "go-language-server": {
+      "transport": {
+        "type": "http", 
+        "endpoint": "http://your-server:8081"
+      }
+    }
+  }
+}
+```
+
+### Reverse Proxy Configuration
+
+If you want to use a reverse proxy (like Traefik), configure it to route to the individual service endpoints:
+
+- TypeScript: `http://mcp-typescript:8080` 
+- Go: `http://mcp-go:8080`
+- Python: `http://mcp-python:8080`
+- Rust: `http://mcp-rust:8080`
+- C/C++: `http://mcp-clangd:8080`
+
+### Production Considerations
+
+- **Workspace Security**: Mount only the specific directories you need
+- **Network Security**: Use proper firewall rules and consider VPN/private networks
+- **Resource Limits**: Configure Docker memory/CPU limits for large codebases
+- **Persistent Storage**: Use Docker volumes for caches (Go build cache, Cargo cache, etc.)
+- **Reverse Proxy**: Use your existing reverse proxy (like Traefik) to route to individual services
+- **Health Monitoring**: Health check endpoints are included in the Docker configurations
+
 ## Tools
 
 - `definition`: Retrieves the complete source code definition of any symbol (function, type, constant, etc.) from your codebase.
@@ -180,7 +318,7 @@ This is an [MCP](https://modelcontextprotocol.io/introduction) server that runs 
 
 This codebase makes use of edited code from [gopls](https://go.googlesource.com/tools/+/refs/heads/master/gopls/internal/protocol) to handle LSP communication. See ATTRIBUTION for details. Everything here is covered by a permissive BSD style license.
 
-[mcp-go](https://github.com/mark3labs/mcp-go) is used for MCP communication. Thank you for your service.
+The [official MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) is used for MCP communication, providing both stdio and HTTP streaming transport support.
 
 This is beta software. Please let me know by creating an issue if you run into any problems or have suggestions of any kind.
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,7 +15,7 @@ import (
 	"github.com/isaacphi/mcp-language-server/internal/logging"
 	"github.com/isaacphi/mcp-language-server/internal/lsp"
 	"github.com/isaacphi/mcp-language-server/internal/watcher"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Create a logger for the core component
@@ -24,12 +25,14 @@ type config struct {
 	workspaceDir string
 	lspCommand   string
 	lspArgs      []string
+	mode         string // "stdio" or "http"
+	port         int    // for HTTP mode
 }
 
 type mcpServer struct {
 	config           config
 	lspClient        *lsp.Client
-	mcpServer        *server.MCPServer
+	mcpServer        *mcp.Server
 	ctx              context.Context
 	cancelFunc       context.CancelFunc
 	workspaceWatcher *watcher.WorkspaceWatcher
@@ -39,10 +42,17 @@ func parseConfig() (*config, error) {
 	cfg := &config{}
 	flag.StringVar(&cfg.workspaceDir, "workspace", "", "Path to workspace directory")
 	flag.StringVar(&cfg.lspCommand, "lsp", "", "LSP command to run (args should be passed after --)")
+	flag.StringVar(&cfg.mode, "mode", "stdio", "Transport mode: 'stdio' or 'http'")
+	flag.IntVar(&cfg.port, "port", 8080, "Port for HTTP mode (ignored for stdio mode)")
 	flag.Parse()
 
 	// Get remaining args after -- as LSP arguments
 	cfg.lspArgs = flag.Args()
+
+	// Validate transport mode
+	if cfg.mode != "stdio" && cfg.mode != "http" {
+		return nil, fmt.Errorf("mode must be 'stdio' or 'http'")
+	}
 
 	// Validate workspace directory
 	if cfg.workspaceDir == "" {
@@ -108,19 +118,46 @@ func (s *mcpServer) start() error {
 		return err
 	}
 
-	s.mcpServer = server.NewMCPServer(
-		"MCP Language Server",
-		"v0.0.2",
-		server.WithLogging(),
-		server.WithRecovery(),
-	)
+	s.mcpServer = mcp.NewServer(&mcp.Implementation{
+		Name:    "MCP Language Server",
+		Version: "v0.0.2",
+	}, nil)
 
 	err := s.registerTools()
 	if err != nil {
 		return fmt.Errorf("tool registration failed: %v", err)
 	}
 
-	return server.ServeStdio(s.mcpServer)
+	switch s.config.mode {
+	case "stdio":
+		coreLogger.Info("Starting MCP server in stdio mode")
+		return s.mcpServer.Run(s.ctx, &mcp.StdioTransport{})
+	case "http":
+		addr := fmt.Sprintf(":%d", s.config.port)
+		coreLogger.Info("Starting MCP server in HTTP mode on %s", addr)
+		
+		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+			return s.mcpServer
+		}, nil)
+		
+		httpServer := &http.Server{
+			Addr:    addr,
+			Handler: handler,
+		}
+		
+		// Start server in a goroutine so we can handle shutdown
+		go func() {
+			<-s.ctx.Done()
+			coreLogger.Info("Shutting down HTTP server")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			httpServer.Shutdown(shutdownCtx)
+		}()
+		
+		return httpServer.ListenAndServe()
+	default:
+		return fmt.Errorf("unsupported mode: %s", s.config.mode)
+	}
 }
 
 func main() {

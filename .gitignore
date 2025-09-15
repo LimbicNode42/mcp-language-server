@@ -1,6 +1,9 @@
 # Binary
 mcp-language-server
 
+# Environment configuration
+.env
+
 # Test output
 test-output/
 *.diff

@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # TypeScript Language Server (Default)
+  mcp-typescript:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: typescript-only
+    ports:
+      - "${MCP_TYPESCRIPT_PORT:-8080}:8080"
+    volumes:
+      - "${WORKSPACE_PATH:-./workspace}:/workspace"
+    environment:
+      - LANGUAGE_SERVER_TYPE=${TYPESCRIPT_LANGUAGE_SERVER_TYPE:-typescript}
+      - MCP_MODE=${TYPESCRIPT_MCP_MODE:-http}
+      - MCP_PORT=${TYPESCRIPT_MCP_PORT:-8080}
+      - WORKSPACE_DIR=${TYPESCRIPT_WORKSPACE_DIR:-/workspace}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Go Language Server
+  mcp-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: go-only
+    ports:
+      - "${MCP_GO_PORT:-8081}:8080"
+    volumes:
+      - "${GO_WORKSPACE_PATH:-./go-workspace}:/workspace"
+      - "${GO_CACHE_PATH:-go-cache}:/root/.cache/go-build"
+      - "${GO_MOD_CACHE_PATH:-go-mod-cache}:/go/pkg/mod"
+    environment:
+      - LANGUAGE_SERVER_TYPE=${GO_LANGUAGE_SERVER_TYPE:-go}
+      - MCP_MODE=${GO_MCP_MODE:-http}
+      - MCP_PORT=${GO_MCP_PORT:-8080}
+      - WORKSPACE_DIR=${GO_WORKSPACE_DIR:-/workspace}
+      - GOPATH=${GO_GOPATH:-/go}
+      - GOCACHE=${GO_GOCACHE:-/root/.cache/go-build}
+      - GOMODCACHE=${GO_GOMODCACHE:-/go/pkg/mod}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  # Python Language Server
+  mcp-python:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: python-only
+    ports:
+      - "${MCP_PYTHON_PORT:-8082}:8080"
+    volumes:
+      - "${PYTHON_WORKSPACE_PATH:-./python-workspace}:/workspace"
+    environment:
+      - LANGUAGE_SERVER_TYPE=${PYTHON_LANGUAGE_SERVER_TYPE:-python}
+      - MCP_MODE=${PYTHON_MCP_MODE:-http}
+      - MCP_PORT=${PYTHON_MCP_PORT:-8080}
+      - WORKSPACE_DIR=${PYTHON_WORKSPACE_DIR:-/workspace}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  # Rust Language Server
+  mcp-rust:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: rust-only
+    ports:
+      - "${MCP_RUST_PORT:-8083}:8080"
+    volumes:
+      - "${RUST_WORKSPACE_PATH:-./rust-workspace}:/workspace"
+      - "${CARGO_CACHE_PATH:-cargo-cache}:/usr/local/cargo/registry"
+    environment:
+      - LANGUAGE_SERVER_TYPE=${RUST_LANGUAGE_SERVER_TYPE:-rust}
+      - MCP_MODE=${RUST_MCP_MODE:-http}
+      - MCP_PORT=${RUST_MCP_PORT:-8080}
+      - WORKSPACE_DIR=${RUST_WORKSPACE_DIR:-/workspace}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  # C/C++ Language Server (clangd)
+  mcp-clangd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: clangd-only
+    ports:
+      - "${MCP_CLANGD_PORT:-8084}:8080"
+    volumes:
+      - "${CLANGD_WORKSPACE_PATH:-./clangd-workspace}:/workspace"
+    environment:
+      - LANGUAGE_SERVER_TYPE=${CLANGD_LANGUAGE_SERVER_TYPE:-clangd}
+      - MCP_MODE=${CLANGD_MCP_MODE:-http}
+      - MCP_PORT=${CLANGD_MCP_PORT:-8080}
+      - WORKSPACE_DIR=${CLANGD_WORKSPACE_DIR:-/workspace}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  # All-in-one server (configurable via environment)
+  mcp-all:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: all-languages
+    ports:
+      - "${MCP_ALL_PORT:-8085}:8080"
+    volumes:
+      - "${ALL_WORKSPACE_PATH:-./workspace}:/workspace"
+    environment:
+      - LANGUAGE_SERVER_TYPE=${ALL_LANGUAGE_SERVER_TYPE:-typescript}
+      - MCP_MODE=${ALL_MCP_MODE:-http}
+      - MCP_PORT=${ALL_MCP_PORT:-8080}
+      - WORKSPACE_DIR=${ALL_WORKSPACE_DIR:-/workspace}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+volumes:
+  go-cache:
+  go-mod-cache:
+  cargo-cache:
+
+networks:
+  default:
+    name: mcp-network
