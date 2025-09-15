@@ -223,30 +223,34 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 
 	lspLogger.Debug("Waiting for response to request ID: %v", msg.ID)
 
-	// Wait for response
-	resp := <-ch
+	// Wait for response with context timeout
+	select {
+	case resp := <-ch:
+		lspLogger.Debug("Received response for request ID: %v", msg.ID)
 
-	lspLogger.Debug("Received response for request ID: %v", msg.ID)
-
-	if resp.Error != nil {
-		lspLogger.Error("Request failed: %s (code: %d)", resp.Error.Message, resp.Error.Code)
-		return fmt.Errorf("request failed: %s (code: %d)", resp.Error.Message, resp.Error.Code)
-	}
-
-	if result != nil {
-		// If result is a json.RawMessage, just copy the raw bytes
-		if rawMsg, ok := result.(*json.RawMessage); ok {
-			*rawMsg = resp.Result
-			return nil
+		if resp.Error != nil {
+			lspLogger.Error("Request failed: %s (code: %d)", resp.Error.Message, resp.Error.Code)
+			return fmt.Errorf("request failed: %s (code: %d)", resp.Error.Message, resp.Error.Code)
 		}
-		// Otherwise unmarshal into the provided type
-		if err := json.Unmarshal(resp.Result, result); err != nil {
-			lspLogger.Error("Failed to unmarshal result: %v", err)
-			return fmt.Errorf("failed to unmarshal result: %w", err)
-		}
-	}
 
-	return nil
+		if result != nil {
+			// If result is a json.RawMessage, just copy the raw bytes
+			if rawMsg, ok := result.(*json.RawMessage); ok {
+				*rawMsg = resp.Result
+				return nil
+			}
+			// Otherwise unmarshal into the provided type
+			if err := json.Unmarshal(resp.Result, result); err != nil {
+				lspLogger.Error("Failed to unmarshal result: %v", err)
+				return fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+		}
+
+		return nil
+	case <-ctx.Done():
+		lspLogger.Error("Request timed out or cancelled: method=%s id=%v", method, id)
+		return fmt.Errorf("request timed out or cancelled: %w", ctx.Err())
+	}
 }
 
 // Notify sends a notification (a request without an ID that doesn't expect a response)

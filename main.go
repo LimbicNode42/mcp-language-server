@@ -104,8 +104,13 @@ func (s *mcpServer) initializeLSP() error {
 	s.lspClient = client
 	s.workspaceWatcher = watcher.NewWorkspaceWatcher(client)
 
+	coreLogger.Info("LSP process started, PID: %d", client.GetProcessID())
 	coreLogger.Info("Initializing LSP client...")
-	initResult, err := client.InitializeLSPClient(s.ctx, s.config.workspaceDir)
+	// Create a timeout context for LSP initialization (2 minutes should be plenty)
+	initCtx, initCancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer initCancel()
+	
+	initResult, err := client.InitializeLSPClient(initCtx, s.config.workspaceDir)
 	if err != nil {
 		return fmt.Errorf("initialize failed: %v", err)
 	}

@@ -101,6 +101,13 @@ func NewClient(command string, args ...string) (*Client, error) {
 	return client, nil
 }
 
+func (c *Client) GetProcessID() int {
+	if c.Cmd != nil && c.Cmd.Process != nil {
+		return c.Cmd.Process.Pid
+	}
+	return -1
+}
+
 func (c *Client) RegisterNotificationHandler(method string, handler NotificationHandler) {
 	c.notificationMu.Lock()
 	defer c.notificationMu.Unlock()
@@ -114,6 +121,8 @@ func (c *Client) RegisterServerRequestHandler(method string, handler ServerReque
 }
 
 func (c *Client) InitializeLSPClient(ctx context.Context, workspaceDir string) (*protocol.InitializeResult, error) {
+	lspLogger.Info("Creating initialize request for workspace: %s", workspaceDir)
+	
 	initParams := &protocol.InitializeParams{
 		WorkspaceFoldersInitializeParams: protocol.WorkspaceFoldersInitializeParams{
 			WorkspaceFolders: []protocol.WorkspaceFolder{
@@ -191,11 +200,14 @@ func (c *Client) InitializeLSPClient(ctx context.Context, workspaceDir string) (
 		},
 	}
 
+	lspLogger.Info("Sending initialize request to LSP server...")
 	var result protocol.InitializeResult
 	if err := c.Call(ctx, "initialize", initParams, &result); err != nil {
 		return nil, fmt.Errorf("initialize failed: %w", err)
 	}
+	lspLogger.Info("Initialize request completed successfully")
 
+	lspLogger.Info("Sending initialized notification...")
 	if err := c.Notify(ctx, "initialized", struct{}{}); err != nil {
 		return nil, fmt.Errorf("initialized notification failed: %w", err)
 	}
