@@ -4,7 +4,7 @@
 FROM node:20-alpine AS node-base
 RUN npm install -g typescript typescript-language-server pyright
 
-FROM golang:1.22-alpine AS go-base
+FROM golang:1.23-alpine AS go-base
 RUN apk add --no-cache git
 RUN go install golang.org/x/tools/gopls@latest
 
@@ -16,7 +16,7 @@ FROM alpine:3.18 AS clangd-base
 RUN apk add --no-cache clang clang-extra-tools
 
 # Build stage for mcp-language-server
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
