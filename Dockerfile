@@ -2,7 +2,12 @@
 # Supports TypeScript, Go, Python, Rust, and C/C++ language servers
 
 FROM node:20-alpine AS node-base
+# Use npx to run typescript-language-server which handles ES modules properly
 RUN npm install -g typescript typescript-language-server pyright
+# Create a wrapper script that uses npx to properly handle the ES module
+RUN echo '#!/bin/sh' > /usr/local/bin/typescript-language-server-wrapper && \
+    echo 'exec npx typescript-language-server "$@"' >> /usr/local/bin/typescript-language-server-wrapper && \
+    chmod +x /usr/local/bin/typescript-language-server-wrapper
 
 FROM golang:1.23-alpine AS go-base
 RUN apk add --no-cache git
@@ -39,7 +44,7 @@ FROM runtime-base AS all-languages
 # Copy Node.js language servers
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=node-base /usr/local/bin/tsserver /usr/local/bin/
-COPY --from=node-base /usr/local/bin/typescript-language-server /usr/local/bin/
+COPY --from=node-base /usr/local/bin/typescript-language-server-wrapper /usr/local/bin/typescript-language-server
 COPY --from=node-base /usr/local/bin/pyright-langserver /usr/local/bin/
 
 # Copy Go language server
@@ -118,7 +123,7 @@ CMD case "$LANGUAGE_SERVER_TYPE" in \
 # Specialized single-language images for smaller size
 FROM runtime-base AS typescript-only
 COPY --from=node-base /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=node-base /usr/local/bin/typescript-language-server /usr/local/bin/
+COPY --from=node-base /usr/local/bin/typescript-language-server-wrapper /usr/local/bin/typescript-language-server
 COPY --from=builder /app/mcp-language-server /usr/local/bin/
 RUN mkdir -p /workspace
 WORKDIR /workspace
