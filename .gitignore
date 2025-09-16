@@ -4,6 +4,9 @@ mcp-language-server
 # Environment configuration
 .env
 
+# Example projects (for local testing only)
+example-projects/
+
 # Test output
 test-output/
 *.diff
